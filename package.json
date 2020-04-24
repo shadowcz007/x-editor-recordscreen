@@ -1,14 +1,14 @@
 {
     "name": "@editorjs/recordscreen",
-    "version": "1.4.0",
+    "version": "1.0.0",
     "keywords": [
-        "codex editor",
+        "x editor",
         "RecordScreen",
         "tool",
         "editor.js",
         "editorjs"
     ],
-    "description": "RecordScreen Tool for Editor.js",
+    "description": "RecordScreen Tool for x-Editor.js",
     "license": "MIT",
     "repository": "",
     "main": "./dist/bundle.js",
@@ -30,12 +30,12 @@
         "postcss-nested-ancestors": "^2.0.0",
         "raw-loader": "^3.1.0",
         "style-loader": "^0.21.0",
-        "worker-loader": "^2.0.0",
         "webpack": "^4.29.5",
-        "webpack-cli": "^3.2.3"
+        "webpack-cli": "^3.2.3",
+        "worker-loader": "^2.0.0"
     },
     "dependencies": {
-
-
+        "ml5": "^0.5.0",
+        "recordrtc": "^5.5.9"
     }
 }
