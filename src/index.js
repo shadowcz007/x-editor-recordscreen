@@ -4,7 +4,9 @@
 require('./index.css').toString();
 
 const RecordRTC = require('recordrtc/RecordRTC');
-const ml5 = require('ml5');
+//const ml5 = require('ml5');
+const smartcrop = require("smartcrop");
+
 
 /**
  * RecordScreen Tool for the Editor.js 2.0
@@ -37,6 +39,11 @@ class RecordScreen {
         this.recorder = null;
         this.userStream = null;
         this.screenStream = null;
+
+        //摄像头输出的尺寸 方形
+        this.userStreamSize = 400;
+        this.distance = 0;
+
         /**
          * Styles
          */
@@ -167,13 +174,15 @@ class RecordScreen {
     }
 
     async _initMediaDevices() {
-
-
         let userStream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: false
+            video: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                frameRate: 24
+            },
+            audio: true
         });
-        //console.log(userStream)
+        console.log(userStream.width, userStream.height)
 
         let screenStream = await navigator.mediaDevices.getDisplayMedia({
             video: true
@@ -183,8 +192,8 @@ class RecordScreen {
         screenStream.height = window.screen.height;
         screenStream.fullcanvas = true;
 
-        userStream.width = 440;
-        userStream.height = 360;
+        userStream.width = 1280;
+        userStream.height = 720;
 
         let screenVideo = this._keepStreamActive(screenStream);
         this.userVideo = this._keepStreamActive(userStream);
@@ -211,23 +220,26 @@ class RecordScreen {
 
         var canvasStream = userCanvas.captureStream(15);
         var newUserStream = new MediaStream();
-        newUserStream.width = userStream.width;
-        newUserStream.height = userStream.height;
-        newUserStream.top = screenStream.height - newUserStream.height;
-        newUserStream.left = screenStream.width - newUserStream.width;
+        newUserStream.width = this.userStreamSize;
+        newUserStream.height = this.userStreamSize;
+        newUserStream.top = screenStream.height - this.userStreamSize;;
+        newUserStream.left = screenStream.width - this.userStreamSize;;
 
         // "getTracks" is RecordRTC's built-in function
         RecordRTC.getTracks(canvasStream, 'video').forEach(function(videoTrack) {
             newUserStream.addTrack(videoTrack);
         });
         // "getTracks" is RecordRTC's built-in function
-        // RecordRTC.getTracks(userStream, 'audio').forEach(function(audioTrack) {
-        //     newUserStream.addTrack(audioTrack);
-        // });
+        RecordRTC.getTracks(userStream, 'audio').forEach(function(audioTrack) {
+            newUserStream.addTrack(audioTrack);
+        });
 
 
         this.recorder = 1;
-        this._video2Stream(0);
+
+        window.requestAnimationFrame(async() => {
+            await this._video2Stream(0);
+        });
 
         return [screenStream, newUserStream]
     }
@@ -273,16 +285,95 @@ class RecordScreen {
 
     }
 
+    async _centerVideo(video, width, height, size = 100) {
+        //用来计算的，缩小 ，加快运算速度
+        let computeWidth = 100,
+            computeHeigth = ~~(height * computeWidth / width);
+        let ctxForCompute = this._createCanvas(computeWidth, computeHeigth);
+        ctxForCompute.drawImage(video, 0, 0, computeWidth, computeHeigth);
+        let result = await smartcrop.crop(ctxForCompute.canvas, { width: size, height: size });
+        //console.log(computeWidth, computeHeigth, width, height, result)
+        result.topCrop.x *= width / computeWidth;
+        result.topCrop.y *= width / computeWidth;
+        result.topCrop.width *= width / computeWidth;
+        result.topCrop.height *= width / computeWidth;
+        //ctx.strokeRect(result.topCrop.x, result.topCrop.y, result.topCrop.width, result.topCrop.height);
+        //this.wrapper.block.appendChild(ctx.canvas);
+
+        /*
+         * @todo 抖动
+         */
+        if (this.beforeCenterX == undefined || this.beforeCenterY == undefined) {
+            this.beforeCenterX = width * 0.5;
+            this.beforeCenterY = height * 0.5;
+        };
+        let x = result.topCrop.x + result.topCrop.width * 0.5,
+            y = result.topCrop.y + result.topCrop.height * 0.5;
+
+        let distance = Math.sqrt(Math.pow(x - this.beforeCenterX, 2) + Math.pow(y - this.beforeCenterY, 2));
+        this.beforeCenterX = x;
+        this.beforeCenterY = y;
+
+        //console.log(distance);
+        if (distance > 0 || this.cropResult == undefined) {
+            this.distance++;
+        };
+        if (this.distance < 2 || this.cropResult == undefined) {
+            //备份上一帧位置
+            this.cropResult = result;
+            this.distance = 0;
+        } else {
+            //this.distance = 0;
+            result = this.cropResult;
+        };
+
+
+        //原图
+        let ctx = this._createCanvas(width, height);
+        ctx.drawImage(video, 0, 0, width, height);
+        //裁切
+        let padding = 4;
+        let ctxBox = this._createCanvas(result.topCrop.width, result.topCrop.height);
+        ctxBox.canvas.width = result.topCrop.width + padding * 2;
+        ctxBox.canvas.height = result.topCrop.height + padding * 2;
+        ctxBox.drawImage(ctx.canvas, result.topCrop.x - padding, result.topCrop.y - padding, result.topCrop.width + padding * 2, result.topCrop.height + padding * 2, 0, 0, ctxBox.canvas.width, ctxBox.canvas.height);
+        //this.wrapper.block.appendChild(ctxBox.canvas);
+
+        //水平翻转
+        var img_data = ctxBox.getImageData(0, 0, ctxBox.canvas.width, ctxBox.canvas.height),
+            i, i2, t,
+            h = img_data.height,
+            w = img_data.width,
+            w_2 = w / 2;
+        for (var dy = 0; dy < h; dy++) {
+            for (var dx = 0; dx < w_2; dx++) {
+                i = (dy << 2) * w + (dx << 2)
+                i2 = ((dy + 1) << 2) * w - ((dx + 1) << 2)
+                for (var p = 0; p < 4; p++) {
+                    t = img_data.data[i + p]
+                    img_data.data[i + p] = img_data.data[i2 + p]
+                    img_data.data[i2 + p] = t
+                }
+            }
+        }
+        ctxBox.putImageData(img_data, 0, 0);
+
+        return ctxBox.canvas;
+    }
+
     async _video2Stream(tries) {
         //console.log(context)
         if (!this.recorder) return; // ignore/skip on stop-recording
         if (tries > 10) {
-            // this.context.canvas.width = this.userVideo.videoWidth;
-            // this.context.canvas.height = this.userVideo.videoHeight;
 
-            let ctx = this._createCanvas(this.userStream.width * 0.2, this.userStream.height * 0.2);
-            ctx.drawImage(this.userVideo, 0, 0, this.userStream.width * 0.2, this.userStream.height * 0.2);
-            let bc = await this._bodypix(ctx.canvas);
+            //使用bodypix处理摄像头视频
+            // let ctx = this._createCanvas(this.userStream.width * 0.2, this.userStream.height * 0.2);
+            // ctx.drawImage(this.userVideo, 0, 0, this.userStream.width * 0.2, this.userStream.height * 0.2);
+            // let bc = await this._bodypix(ctx.canvas);
+
+            //使用传参的方式处理摄像头视频,使人物居中
+            let bc = await this._centerVideo(this.userVideo, this.userStream.width, this.userStream.height, this.userStreamSize);
+
             this.context.clearRect(0, 0, this.userStream.width, this.userStream.height);
             this.context.drawImage(bc, 0, 0, this.userStream.width, this.userStream.height);
             //this.context.fillRect(10, 10, 10, 10);
@@ -291,9 +382,12 @@ class RecordScreen {
             tries += 1;
         };
         // repeat (looper)
-        setTimeout(async() => {
+        // setTimeout(async() => {
+        //     await this._video2Stream(tries);
+        // }, 100);
+        window.requestAnimationFrame(async() => {
             await this._video2Stream(tries);
-        }, 100);
+        });
     }
 
     async _startRecord() {
