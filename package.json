@@ -35,8 +35,10 @@
         "worker-loader": "^2.0.0"
     },
     "dependencies": {
-        "ml5": "^0.5.0",
+        "bezier-js": "^2.6.1",
+        "face-api.js": "^0.22.2",
         "recordrtc": "^5.5.9",
-        "smartcrop": "^2.0.3"
+        "smartcrop": "^2.0.3",
+        "ssim.js": "^3.1.0"
     }
 }

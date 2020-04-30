@@ -5,12 +5,14 @@ require('./index.css').toString();
 
 const RecordRTC = require('recordrtc/RecordRTC');
 //const ml5 = require('ml5');
-const smartcrop = require("smartcrop");
-
-
-/**
- * RecordScreen Tool for the Editor.js 2.0
- */
+// const smartcrop = require("smartcrop");
+// const Bezier = require('bezier-js')
+// const ssim = require("ssim.js").default;
+const faceapi = require("face-api.js/dist/face-api");
+console.log(faceapi.nets.tinyFaceDetector)
+    /**
+     * RecordScreen Tool for the Editor.js 2.0
+     */
 class RecordScreen {
 
     static get toolbox() {
@@ -42,7 +44,12 @@ class RecordScreen {
 
         //摄像头输出的尺寸 方形
         this.userStreamSize = 400;
-        this.distance = 0;
+
+        //用来存储 帧画面的焦点
+        this.framesCenter = [];
+        this.count = 0;
+        //结果
+        this.frames = [];
 
         /**
          * Styles
@@ -80,6 +87,9 @@ class RecordScreen {
         //录屏显示的video
         this.wrapper.block.appendChild(this._createVideo());
 
+        let c = this._createCanvas(400, 200);
+        this.testC = c;
+        this.wrapper.block.appendChild(c.canvas);
         return this.wrapper.block;
     }
 
@@ -182,7 +192,7 @@ class RecordScreen {
             },
             audio: true
         });
-        console.log(userStream.width, userStream.height)
+        //console.log(userStream.width, userStream.height)
 
         let screenStream = await navigator.mediaDevices.getDisplayMedia({
             video: true
@@ -238,6 +248,10 @@ class RecordScreen {
         this.recorder = 1;
 
         window.requestAnimationFrame(async() => {
+            await this._compute();
+        })
+
+        window.requestAnimationFrame(async() => {
             await this._video2Stream(0);
         });
 
@@ -285,61 +299,121 @@ class RecordScreen {
 
     }
 
-    async _centerVideo(video, width, height, size = 100) {
+    async _compute() {
+
+        if (!this.recorder) return; // ignore/skip on stop-recording
         //用来计算的，缩小 ，加快运算速度
-        let computeWidth = 100,
+        let video = this.userVideo,
+            width = this.userStream.width,
+            height = this.userStream.height,
+            size = this.userStreamSize;
+
+        let computeWidth = 200,
             computeHeigth = ~~(height * computeWidth / width);
         let ctxForCompute = this._createCanvas(computeWidth, computeHeigth);
         ctxForCompute.drawImage(video, 0, 0, computeWidth, computeHeigth);
-        let result = await smartcrop.crop(ctxForCompute.canvas, { width: size, height: size });
-        //console.log(computeWidth, computeHeigth, width, height, result)
-        result.topCrop.x *= width / computeWidth;
-        result.topCrop.y *= width / computeWidth;
-        result.topCrop.width *= width / computeWidth;
-        result.topCrop.height *= width / computeWidth;
-        //ctx.strokeRect(result.topCrop.x, result.topCrop.y, result.topCrop.width, result.topCrop.height);
-        //this.wrapper.block.appendChild(ctx.canvas);
+
+        await this._loadModel();
+        let img = await this._loadImg(ctxForCompute.canvas.toDataURL());
+        let result = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions());
+        let box = {};
+        if (result && result.box) {
+
+            box = {
+                x: result.box.x * width / computeWidth,
+                y: result.box.y * width / computeWidth,
+                width: result.box.width * width / computeWidth,
+                height: result.box.height * width / computeWidth
+            };
+        } else if (this.frames.length > 0) {
+            box = this.frames[0];
+        } else {
+            box = {
+                x: ~~((width - size) / 2),
+                y: ~~((height - size) / 2),
+                width: size,
+                height: size
+            }
+
+        }
+
+        let ctx = this._createCanvas(width, height);
+        ctx.drawImage(video, 0, 0, width, height);
+        console.log({...box })
+        this.frames.unshift({...box, canvas: ctx.canvas, ctx: ctxForCompute });
+
+        window.requestAnimationFrame(async() => {
+            await this._compute();
+        });
+
+    }
+
+    async _loadImg(_url) {
+        return new Promise((resolve, reject) => {
+            let img = new Image();
+            img.src = _url;
+            // console.log(str);
+            img.onload = function() {
+                resolve(img);
+            };
+        });
+    };
+
+    async _loadModel() {
+        if (!faceapi.nets.tinyFaceDetector.isLoaded) {
+            await faceapi.loadTinyFaceDetectorModel(this.config.modelPath);
+        }
+    }
+
+    async _centerVideo() {
 
         /*
          * @todo 抖动
          */
-        if (this.beforeCenterX == undefined || this.beforeCenterY == undefined) {
-            this.beforeCenterX = width * 0.5;
-            this.beforeCenterY = height * 0.5;
-        };
-        let x = result.topCrop.x + result.topCrop.width * 0.5,
-            y = result.topCrop.y + result.topCrop.height * 0.5;
 
-        let distance = Math.sqrt(Math.pow(x - this.beforeCenterX, 2) + Math.pow(y - this.beforeCenterY, 2));
-        this.beforeCenterX = x;
-        this.beforeCenterY = y;
+        if (this.frames.length == 0) return;
+        //取出最近的
+        let frame = this.frames.pop();
+        if (this.frames.length > 0) {
 
-        //console.log(distance);
-        if (distance > 0 || this.cropResult == undefined) {
-            this.distance++;
-        };
-        if (this.distance < 2 || this.cropResult == undefined) {
-            //备份上一帧位置
-            this.cropResult = result;
-            this.distance = 0;
-        } else {
-            //this.distance = 0;
-            result = this.cropResult;
-        };
+            // let bframe = this.frames[this.frames.length - 1];
+
+            // const { mssim, performance } = ssim(bframe.canvas.getContext('2d').getImageData(0, 0, this.userStream.width, this.userStream.height), frame.canvas.getContext('2d').getImageData(0, 0, this.userStream.width, this.userStream.height));
+
+            // if (mssim > 0.9) {
+
+            // }
+            //console.log(`SSIM: ${mssim} (${performance}ms)`);
+        }
+
+        // if (this.frames.length >= 2) {
+
+        //     this.count++;
+        //     this.testC.canvas.width = width;
+        //     this.testC.canvas.style.width = "70%";
+        //     this.testC.canvas.height = height;
+
+        //     this.testC.strokeStyle = 'green';
+        //     let h = result.topCrop.height,
+        //         w = h,
+        //         y = 0;
+        //     // console.log('-----', x, y, w, h);
+        //     this.testC.strokeRect(nx, y, w, h);
+        //     this.testC.strokeStyle = "red";
+        //     this.testC.strokeRect(result.topCrop.x - padding, result.topCrop.y - padding, result.topCrop.width + padding * 2, result.topCrop.height + padding * 2);
+
+        // }
 
 
-        //原图
-        let ctx = this._createCanvas(width, height);
-        ctx.drawImage(video, 0, 0, width, height);
         //裁切
         let padding = 4;
-        let ctxBox = this._createCanvas(result.topCrop.width, result.topCrop.height);
-        ctxBox.canvas.width = result.topCrop.width + padding * 2;
-        ctxBox.canvas.height = result.topCrop.height + padding * 2;
-        ctxBox.drawImage(ctx.canvas, result.topCrop.x - padding, result.topCrop.y - padding, result.topCrop.width + padding * 2, result.topCrop.height + padding * 2, 0, 0, ctxBox.canvas.width, ctxBox.canvas.height);
+        let ctxBox = this._createCanvas(frame.width, frame.height);
+        ctxBox.canvas.width = frame.width + padding * 2;
+        ctxBox.canvas.height = frame.height + padding * 2;
+        ctxBox.drawImage(frame.canvas, frame.x - padding, frame.y - padding, frame.width + padding * 2, frame.height + padding * 2, 0, 0, ctxBox.canvas.width, ctxBox.canvas.height);
         //this.wrapper.block.appendChild(ctxBox.canvas);
-
-        //水平翻转
+        console.log(frame)
+            //水平翻转
         var img_data = ctxBox.getImageData(0, 0, ctxBox.canvas.width, ctxBox.canvas.height),
             i, i2, t,
             h = img_data.height,
@@ -362,9 +436,9 @@ class RecordScreen {
     }
 
     async _video2Stream(tries) {
-        //console.log(context)
+        console.log(this.frames.length)
         if (!this.recorder) return; // ignore/skip on stop-recording
-        if (tries > 10) {
+        if (tries > 10 && this.frames.length > 0) {
 
             //使用bodypix处理摄像头视频
             // let ctx = this._createCanvas(this.userStream.width * 0.2, this.userStream.height * 0.2);
@@ -372,10 +446,12 @@ class RecordScreen {
             // let bc = await this._bodypix(ctx.canvas);
 
             //使用传参的方式处理摄像头视频,使人物居中
-            let bc = await this._centerVideo(this.userVideo, this.userStream.width, this.userStream.height, this.userStreamSize);
+            let bc = await this._centerVideo();
+            if (bc) {
+                this.context.clearRect(0, 0, this.userStream.width, this.userStream.height);
+                this.context.drawImage(bc, 0, 0, this.userStream.width, this.userStream.height);
+            }
 
-            this.context.clearRect(0, 0, this.userStream.width, this.userStream.height);
-            this.context.drawImage(bc, 0, 0, this.userStream.width, this.userStream.height);
             //this.context.fillRect(10, 10, 10, 10);
             //console.log(this.userVideo.videoHeight, this.context.canvas.height, this.userStream.height)
         } else {
