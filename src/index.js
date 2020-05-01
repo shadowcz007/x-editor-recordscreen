@@ -4,15 +4,12 @@
 require('./index.css').toString();
 
 const RecordRTC = require('recordrtc/RecordRTC');
-//const ml5 = require('ml5');
-// const smartcrop = require("smartcrop");
-// const Bezier = require('bezier-js')
-// const ssim = require("ssim.js").default;
+const Bezier = require('bezier-js')
 const faceapi = require("face-api.js/dist/face-api");
-console.log(faceapi.nets.tinyFaceDetector)
-    /**
-     * RecordScreen Tool for the Editor.js 2.0
-     */
+
+/**
+ * RecordScreen Tool for the Editor.js 2.0
+ */
 class RecordScreen {
 
     static get toolbox() {
@@ -48,6 +45,7 @@ class RecordScreen {
         //用来存储 帧画面的焦点
         this.framesCenter = [];
         this.count = 0;
+
         //结果
         this.frames = [];
 
@@ -247,6 +245,17 @@ class RecordScreen {
 
         this.recorder = 1;
 
+        let width = this.userStream.width,
+            height = this.userStream.height,
+            size = this.userStreamSize;
+
+        this.defaultBox = {
+            x: ~~((width - size) / 2),
+            y: ~~((height - size) / 2),
+            width: size,
+            height: size
+        };
+
         window.requestAnimationFrame(async() => {
             await this._compute();
         })
@@ -302,6 +311,9 @@ class RecordScreen {
     async _compute() {
 
         if (!this.recorder) return; // ignore/skip on stop-recording
+
+        // if (this.frames.length > 0) return;
+        //console.log("_compute_")
         //用来计算的，缩小 ，加快运算速度
         let video = this.userVideo,
             width = this.userStream.width,
@@ -316,31 +328,42 @@ class RecordScreen {
         await this._loadModel();
         let img = await this._loadImg(ctxForCompute.canvas.toDataURL());
         let result = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions());
-        let box = {};
+        let box;
         if (result && result.box) {
-
             box = {
                 x: result.box.x * width / computeWidth,
                 y: result.box.y * width / computeWidth,
                 width: result.box.width * width / computeWidth,
-                height: result.box.height * width / computeWidth
+                height: result.box.height * width / computeWidth,
+                index: (new Date()).getTime()
             };
-        } else if (this.frames.length > 0) {
-            box = this.frames[0];
-        } else {
-            box = {
-                x: ~~((width - size) / 2),
-                y: ~~((height - size) / 2),
-                width: size,
-                height: size
+            if (this.framesCenter.length > 0) {
+                let beforeFrame = this.framesCenter[this.framesCenter.length - 1];
+                let dis = Math.sqrt(Math.pow(beforeFrame.x - box.x, 2) + Math.pow(beforeFrame.y - box.y, 2));
+                if (dis > 50) {
+                    this.framesCenter.unshift(box);
+                }
+            } else {
+                this.framesCenter.unshift(box);
             }
+        };
 
-        }
+        //  else if (this.frames.length > 0) {
+        //     box = this.frames[0];
+        // } else {
+        //     box = {
+        //         x: ~~((width - size) / 2),
+        //         y: ~~((height - size) / 2),
+        //         width: size,
+        //         height: size
+        //     }
 
-        let ctx = this._createCanvas(width, height);
-        ctx.drawImage(video, 0, 0, width, height);
-        console.log({...box })
-        this.frames.unshift({...box, canvas: ctx.canvas, ctx: ctxForCompute });
+        // }
+
+        this._createFrames();
+        // let ctx = this._createCanvas(width, height);
+        // ctx.drawImage(video, 0, 0, width, height);
+        //this.frames.unshift({...box, canvas: ctx.canvas, ctx: ctxForCompute });
 
         window.requestAnimationFrame(async() => {
             await this._compute();
@@ -365,26 +388,56 @@ class RecordScreen {
         }
     }
 
+    //计算补间帧
+    _createFrames() {
+        if (this.framesCenter.length == 3) {
+
+            let frameRate = 44;
+
+            let point1s = this._getLUT(frameRate, this.framesCenter);
+            let point2s = this._getLUT(frameRate, Array.from(this.framesCenter, f => {
+                return {
+                    x: f.x + f.width,
+                    y: f.y + f.height
+                }
+            }));
+
+            let framesNew = Array.from(point1s, (p1, i) => {
+                let p2 = point2s[i];
+                return {...p1, width: p2.x - p1.x, height: p2.y - p1.y }
+            });
+
+            //拼接的平滑处理
+            // if (this.frames.length > 0) {
+            //     let pointsMiddle = this._getLUT(12, [...framesNew.slice(frameRate - 2, frameRate), this.frames[0]]);
+            //     framesNew = [...framesNew.slice(0, frameRate - 2), ...pointsMiddle];
+            // }
+
+            this.frames = [...framesNew, ...this.frames];
+
+            this.framesCenter = [];
+
+        }
+    }
+
+    _getLUT(count = 12, points = []) {
+        //console.log(points)
+        let pointsNew = Array.from(Array.from(points, f => f.x + "," + f.y).join(",").split(","), p => ~~p);
+        let curve = new Bezier(...pointsNew);
+        return curve.getLUT(count);
+    }
+
     async _centerVideo() {
 
         /*
          * @todo 抖动
          */
 
-        if (this.frames.length == 0) return;
         //取出最近的
-        let frame = this.frames.pop();
-        if (this.frames.length > 0) {
+        let frame = this.frames.length > 0 ? this.frames.pop() : this.defaultBox;
+        this.defaultBox = frame;
 
-            // let bframe = this.frames[this.frames.length - 1];
-
-            // const { mssim, performance } = ssim(bframe.canvas.getContext('2d').getImageData(0, 0, this.userStream.width, this.userStream.height), frame.canvas.getContext('2d').getImageData(0, 0, this.userStream.width, this.userStream.height));
-
-            // if (mssim > 0.9) {
-
-            // }
-            //console.log(`SSIM: ${mssim} (${performance}ms)`);
-        }
+        frame.canvas = this.userVideo;
 
         // if (this.frames.length >= 2) {
 
@@ -406,14 +459,14 @@ class RecordScreen {
 
 
         //裁切
-        let padding = 4;
+        let padding = 100;
         let ctxBox = this._createCanvas(frame.width, frame.height);
         ctxBox.canvas.width = frame.width + padding * 2;
         ctxBox.canvas.height = frame.height + padding * 2;
         ctxBox.drawImage(frame.canvas, frame.x - padding, frame.y - padding, frame.width + padding * 2, frame.height + padding * 2, 0, 0, ctxBox.canvas.width, ctxBox.canvas.height);
         //this.wrapper.block.appendChild(ctxBox.canvas);
-        console.log(frame)
-            //水平翻转
+        // console.log(frame)
+        //水平翻转
         var img_data = ctxBox.getImageData(0, 0, ctxBox.canvas.width, ctxBox.canvas.height),
             i, i2, t,
             h = img_data.height,
@@ -436,9 +489,9 @@ class RecordScreen {
     }
 
     async _video2Stream(tries) {
-        console.log(this.frames.length)
+        //console.log(this.frames.length)
         if (!this.recorder) return; // ignore/skip on stop-recording
-        if (tries > 10 && this.frames.length > 0) {
+        if (tries > 10) {
 
             //使用bodypix处理摄像头视频
             // let ctx = this._createCanvas(this.userStream.width * 0.2, this.userStream.height * 0.2);
@@ -464,42 +517,6 @@ class RecordScreen {
         window.requestAnimationFrame(async() => {
             await this._video2Stream(tries);
         });
-    }
-
-    async _startRecord() {
-
-        let streams = await this._initMediaDevices();
-
-        // this.recorder = new RecordRTC(userStream, {
-        //     recorderType: 'video',
-        //     width: 640,
-        //     height: 480,
-        //     frameRate: 24,
-        //     // workerPath: '../libs/webm-worker.js',
-        //     // webAssemblyPath: '../libs/webm-wasm.wasm',
-        // });
-
-        // console.log(recorder)
-        // const sleep = m => new Promise(r => setTimeout(r, m));
-        // await sleep(3000);
-
-        // await recorder.stopRecording();
-        // let blob = await recorder.getBlob();
-        // invokeSaveAsDialog(blob);
-
-        // var displayMediaOptions = {
-        //     video: true,
-        //     // audio: true,   not support
-        //     cursor: 'always'
-        // }
-        // let captureStream = null;
-        // try {
-        //     captureStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
-        // } catch (err) {
-        //     console.error("Error: " + err);
-        //     this._stop();
-        // }
-        // return captureStream;
     }
 
     _stop() {

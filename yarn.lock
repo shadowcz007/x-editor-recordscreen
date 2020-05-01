@@ -3568,11 +3568,6 @@ signal-exit@^3.0.0:
   resolved "https://registry.npm.taobao.org/signal-exit/download/signal-exit-3.0.3.tgz#a1410c2edd8f077b08b4e253c8eacfcaf057461c"
   integrity sha1-oUEMLt2PB3sItOJTyOrPyvBXRhw=
 
-smartcrop@^2.0.3:
-  version "2.0.3"
-  resolved "https://registry.npm.taobao.org/smartcrop/download/smartcrop-2.0.3.tgz#067aa8af6ebe0954e818f4cdce28a3f87579873e"
-  integrity sha1-Bnqor26+CVToGPTNziij+HV5hz4=
-
 snapdragon-node@^2.0.1:
   version "2.1.1"
   resolved "https://registry.npm.taobao.org/snapdragon-node/download/snapdragon-node-2.1.1.tgz#6c175f86ff14bdb0724563e8f3c1b021a286853b"
@@ -3653,11 +3648,6 @@ sprintf-js@~1.0.2:
   version "1.0.3"
   resolved "https://registry.npm.taobao.org/sprintf-js/download/sprintf-js-1.0.3.tgz#04e6926f662895354f3dd015203633b857297e2c"
   integrity sha1-BOaSb2YolTVPPdAVIDYzuFcpfiw=
-
-ssim.js@^3.1.0:
-  version "3.1.0"
-  resolved "https://registry.npm.taobao.org/ssim.js/download/ssim.js-3.1.0.tgz#6086b789fb6216ec33a7c329454f10f2c5048a82"
-  integrity sha1-YIa3iftiFuwzp8MpRU8Q8sUEioI=
 
 ssri@^6.0.1:
   version "6.0.1"
