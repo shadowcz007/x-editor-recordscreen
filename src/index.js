@@ -48,7 +48,6 @@ class RecordScreen {
 
         //用来存储 帧画面的焦点
         this.framesCenter = [];
-        this.count = 0;
 
         //结果
         this.frames = [];
@@ -84,8 +83,9 @@ class RecordScreen {
         this.wrapper.block.classList.add(this.CSS.wrapperBlock);
         this.wrapper.block.classList.add(this.CSS.blockTag);
 
-        //按钮
+        //开始录屏
         this.wrapper.block.appendChild(this._createStartBtn());
+
         //录屏显示的video
         this.wrapper.block.appendChild(this._createVideo());
 
@@ -117,6 +117,47 @@ class RecordScreen {
         return div
     }
 
+    async _startRecord(isRecord) {
+        //开始
+        if (isRecord) {
+            isRecord = false;
+            this._stop();
+        } else {
+            this.video.parentElement.classList.add(this.CSS.loading);
+            //this.wrapper.block.classList.remove(this.CSS.blockTag);
+            this.video.muted = true;
+
+            let streams = await this._initMediaDevices();
+
+            this.recorder = RecordRTC(streams, {
+                type: 'video',
+                mimeType: 'video/webm',
+                previewStream: (s) => {
+                    this.video.srcObject = s;
+                    if (this.video.srcObject) {
+                        isRecord = true;
+                        console.log("停止录屏");
+                        setTimeout(() => {
+                            //console.log(this.video.srcObject)
+                            this.video.srcObject.oninactive = e => {
+                                e.preventDefault();
+                                isRecord = false;
+                                console.log("开始录屏");
+                                this._stop();
+                            };
+                            this.video.parentElement.classList.remove(this.CSS.loading);
+                        }, 800);
+                    } else {
+                        this.video.parentElement.classList.remove(this.CSS.loading);
+                    }
+                }
+            });
+
+            this.recorder.startRecording();
+
+        }
+    }
+
     _createStartBtn() {
         let button = document.createElement("button");
         button.classList.add(this.CSS.button);
@@ -125,48 +166,7 @@ class RecordScreen {
         let isRecord = false;
         this.api.listeners.on(button, 'click', async(e) => {
             e.preventDefault();
-            //开始
-            if (isRecord) {
-                isRecord = false;
-                this._stop();
-            } else {
-                this.video.parentElement.classList.add(this.CSS.loading);
-                //this.wrapper.block.classList.remove(this.CSS.blockTag);
-                this.video.muted = true;
-
-                let streams = await this._initMediaDevices();
-
-                this.recorder = RecordRTC(streams, {
-                    type: 'video',
-                    mimeType: 'video/webm',
-                    previewStream: (s) => {
-                        this.video.srcObject = s;
-                        if (this.video.srcObject) {
-                            isRecord = true;
-                            button.innerText = "暂停";
-
-                            setTimeout(() => {
-                                //console.log(this.video.srcObject)
-                                this.video.srcObject.oninactive = e => {
-                                    e.preventDefault();
-                                    isRecord = false;
-                                    button.innerText = "开始录屏";
-                                    this._stop();
-                                };
-                                this.video.parentElement.classList.remove(this.CSS.loading);
-                                //this.wrapper.block.classList.add(this.CSS.blockTag);
-                            }, 800);
-
-                        } else {
-                            this.video.parentElement.classList.remove(this.CSS.loading);
-                        }
-                    }
-                });
-
-                this.recorder.startRecording();
-
-            }
-
+            await this._startRecord();
         });
         return button;
     }
