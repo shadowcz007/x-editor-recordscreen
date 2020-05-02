@@ -39,8 +39,12 @@ class RecordScreen {
         this.userStream = null;
         this.screenStream = null;
 
+        //摄像头捕获的尺寸
+        this._AUTHOR_VIDEO_WIDTH = 1280;
+        this._AUTHOR_VIDEO_HEIGHT = 720;
+
         //摄像头输出的尺寸 方形
-        this.userStreamSize = 400;
+        this._AUTHOR_VIDEO_SIZE = 400;
 
         //用来存储 帧画面的焦点
         this.framesCenter = [];
@@ -85,9 +89,9 @@ class RecordScreen {
         //录屏显示的video
         this.wrapper.block.appendChild(this._createVideo());
 
-        let c = this._createCanvas(400, 200);
-        this.testC = c;
-        this.wrapper.block.appendChild(c.canvas);
+        //let c = this._createCanvas(400, 200);
+        //this.testC = c;
+        //this.wrapper.block.appendChild(c.canvas);
         return this.wrapper.block;
     }
 
@@ -184,8 +188,8 @@ class RecordScreen {
     async _initMediaDevices() {
         let userStream = await navigator.mediaDevices.getUserMedia({
             video: {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
+                width: { ideal: this._AUTHOR_VIDEO_WIDTH },
+                height: { ideal: this._AUTHOR_VIDEO_HEIGHT },
                 frameRate: 24
             },
             audio: true
@@ -228,10 +232,10 @@ class RecordScreen {
 
         var canvasStream = userCanvas.captureStream(15);
         var newUserStream = new MediaStream();
-        newUserStream.width = this.userStreamSize;
-        newUserStream.height = this.userStreamSize;
-        newUserStream.top = screenStream.height - this.userStreamSize;;
-        newUserStream.left = screenStream.width - this.userStreamSize;;
+        newUserStream.width = this._AUTHOR_VIDEO_SIZE;
+        newUserStream.height = this._AUTHOR_VIDEO_SIZE;
+        newUserStream.top = screenStream.height - this._AUTHOR_VIDEO_SIZE;;
+        newUserStream.left = screenStream.width - this._AUTHOR_VIDEO_SIZE;;
 
         // "getTracks" is RecordRTC's built-in function
         RecordRTC.getTracks(canvasStream, 'video').forEach(function(videoTrack) {
@@ -247,7 +251,7 @@ class RecordScreen {
 
         let width = this.userStream.width,
             height = this.userStream.height,
-            size = this.userStreamSize;
+            size = this._AUTHOR_VIDEO_SIZE;
 
         this.defaultBox = {
             x: ~~((width - size) / 2),
@@ -318,7 +322,7 @@ class RecordScreen {
         let video = this.userVideo,
             width = this.userStream.width,
             height = this.userStream.height,
-            size = this.userStreamSize;
+            size = this._AUTHOR_VIDEO_SIZE;
 
         let computeWidth = 200,
             computeHeigth = ~~(height * computeWidth / width);
@@ -348,22 +352,7 @@ class RecordScreen {
             }
         };
 
-        //  else if (this.frames.length > 0) {
-        //     box = this.frames[0];
-        // } else {
-        //     box = {
-        //         x: ~~((width - size) / 2),
-        //         y: ~~((height - size) / 2),
-        //         width: size,
-        //         height: size
-        //     }
-
-        // }
-
         this._createFrames();
-        // let ctx = this._createCanvas(width, height);
-        // ctx.drawImage(video, 0, 0, width, height);
-        //this.frames.unshift({...box, canvas: ctx.canvas, ctx: ctxForCompute });
 
         window.requestAnimationFrame(async() => {
             await this._compute();
@@ -530,12 +519,21 @@ class RecordScreen {
         if (this.screenStream) {
             this.screenStream.getTracks().forEach(track => track.stop());
         }
-        this.recorder = null;
+        this.recorder.stopRecording(() => {
+            this._stopRecordingCallback();
+        });
     };
 
-
-
-
+    _stopRecordingCallback() {
+        this.video.srcObject = null;
+        this.video.src = null;
+        this.video.muted = false;
+        this.video.volume = 1;
+        this.video.setAttribute("control", true);
+        this.video.src = URL.createObjectURL(this.recorder.getBlob());
+        this.recorder.destroy();
+        this.recorder = null;
+    }
 }
 
 module.exports = RecordScreen;
